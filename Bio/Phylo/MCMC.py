@@ -10,7 +10,6 @@ from Bio import Phylo
 from Bio.Phylo.TreeConstruction import DistanceCalculator
 from Bio.Phylo.TreeConstruction import DistanceTreeConstructor
 from Bio.Phylo.TreeConstruction import LikelihoodScorer
-from Bio import AlignIO
 from Bio.Align import MultipleSeqAlignment
 from Bio.Phylo.EvolutionModel import GTRModel
 from Bio.Phylo.EvolutionModel import EvolutionModel
@@ -66,13 +65,28 @@ class LocalWithoutClockStepper(Stepper):
 
     Examples
     --------
+    >>> biopython_dir = 'biopython/'
     >>> from Bio.Phylo.MCMC import LocalWithoutClockStepper
+    >>> from Bio import Phylo
     >>> import copy
-    >>> stepper = LocalWithoutClockStepper()
-    >>> tree = Phylo.read('ncbi_taxonomy.xml', 'phyloxml')
+    >>> import random
+    >>> stepper = LocalWithoutClockStepper(size_param=1.0)
+    >>> tree = Phylo.read(biopython_dir + 'Tests/PhyloXML/example.xml', 'phyloxml')
     >>> new_tree = copy.deepcopy(tree)
-    >>> stepper.perform_step(tree)
-    TO_DO
+    >>> hastings_ratio, changed_path, changed_branching_node = stepper.perform_step(tree)
+    >>> Phylo.draw_ascii(tree=tree)
+                __________________ A
+      __________|
+    _|          |___________________________________________ B
+     |
+     |___________________________________________________________________________ C
+    >>> Phylo.draw_ascii(tree=new_tree)
+                                    _____________ A
+      ____________________________|
+    _|                            |______________________________________________ B
+     |
+     |_______________________________ C
+
     """
 
     def __init__(self, size_param=None):
@@ -268,11 +282,16 @@ class ChangeEvolutionParamStepper(Stepper):
     Examples
     --------
     >>> from Bio.Phylo.MCMC import ChangeEvolutionParamStepper
-    >>> stepper = ChangeEvolutionParamStepper()
-    >>> tree = Phylo.read('ncbi_taxonomy.xml', 'phyloxml')
-    >>> new_tree = copy.deepcopy(tree)
-    >>> stepper.perform_step(tree)
-    TO_DO
+    >>> from Bio.Phylo.EvolutionModel import F81Model
+    >>> import random
+    >>> random.seed(248)
+    >>> stepper = ChangeEvolutionParamStepper(size_param=0.03)
+    >>> evolution_model = F81Model()
+    >>> new_evolution_model = stepper.perform_step(evolution_model=evolution_model)
+    >>> print(evolution_model.stat_params)
+    {'A': 0.25, 'C': 0.25, 'G': 0.25, 'T': 0.25}
+    >>> print(new_evolution_model.stat_params)
+    {'A': 0.2523916914623927, 'C': 0.2523916914623927, 'G': 0.25469272719807523, 'T': 0.24052388987713932}
     """
 
     def __init__(self, size_param=None):
@@ -374,13 +393,28 @@ class SamplerMCMC:
         steps_param: Dict[Stepper, float]
             A dictionary representing MCMC steps distribution.
             Default: {LocalWithoutMolecularClock(1): 1}.
-            Each key must be an instance of Stepper class, please specify stepper inside parametrs here.
+            Each key must be an instance of Stepper class, please specify each stepper parameters.
 
     Examples
     --------
+    >>> biopython_dir = 'biopython/'
     >>> from Bio.Phylo.MCMC import SamplerMCMC
-    >>> sampler = SamplerMCMC()
-    TO_DO
+    >>> from Bio.Phylo.EvolutionModel import F81Model
+    >>> from Bio import AlignIO
+    >>> import random
+    >>> random.seed(248)
+    >>> aln = AlignIO.read(biopython_dir + 'Tests/TreeConstruction/msa.phy', 'phylip')
+    >>> sampler = SamplerMCMC(steps_param={LocalWithoutClockStepper(1.0): 0.9, ChangeEvolutionParamStepper(0.05): 0.1})
+    >>> sampling_results = sampler.get_results(msa=aln, evolution_model=F81Model(), no_iterations=50, start_from_random_tree=True)
+    >>> trees = sampling_results[0]
+    >>> likelihoods = sampling_results[1]
+    >>> consecutive_tree_appearances = sampling_results[2]
+    >>> backbone_nodes_changed_in_each_step = sampling_results[3]
+    >>> branching_node_changed_in_each_step = sampling_results[4]
+    >>> changed_stat_parameters = sampling_results[5]
+    >>> consecutive_stat_parameters_appearances = sampling_results[5]
+    >>> f"Last stat_params accepted during sampling are: {changed_stat_parameters[-1]!r}."
+    "Last stat_params accepted during sampling are: {'A': 0.23351360285445338, 'C': 0.2718637628811613, 'G': 0.37067205930595376, 'T': 0.12395057495843154}."
     """
 
     def __init__(self, steps_param=None):
@@ -406,7 +440,7 @@ class SamplerMCMC:
         burn_in=0,
         plot=False,
         start_tree=None,
-        start_from_random_tree=False
+        start_from_random_tree=False,
     ):
         """Perform MCMC sampling procedure.
 
@@ -423,8 +457,8 @@ class SamplerMCMC:
         4. Return list of lists:
         4.1 for LocalWithoutClockStepper steps starting from first tree after burn_in:
         - trees,
-        - no_of_consecutive_tree_appearances,
         - likelihoods,
+        - no_of_consecutive_tree_appearances,
         - changed_backbone_nodes,
         - changed_branching_node - empty if tree topology not changed,
         4.2 for ChangeEvolutionParamStepper:
